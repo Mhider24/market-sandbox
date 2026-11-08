@@ -4,6 +4,8 @@ from typing import Literal
 from .forecast import BPS_PER_UNIT, Forecast
 
 MIN_FORECAST_BPS = 10.0
+DEFAULT_STOCK_CAP_BPS = 2_000
+DEFAULT_SECTOR_CAP_BPS = 4_000
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,10 @@ def select_candidate(
     )
 
 
+def concentration_room_cents(total_cents: int, exposure_cents: int, limit_bps: int) -> int:
+    return total_cents * limit_bps // BPS_PER_UNIT - exposure_cents
+
+
 def check_candidate(
     candidate: Candidate,
     *,
@@ -59,11 +65,11 @@ def check_candidate(
     if candidate.sector in excluded_sectors:
         return Decision(symbol, "hold", "Sector excluded by the profile.")
 
-    sector_room = portfolio_cents * max_sector_bps // BPS_PER_UNIT - sector_cents
+    sector_room = concentration_room_cents(portfolio_cents, sector_cents, max_sector_bps)
     if sector_room <= 0:
         return Decision(symbol, "hold", "Sector exposure has reached its limit.")
 
-    stock_room = portfolio_cents * max_stock_bps // BPS_PER_UNIT - position_cents
+    stock_room = concentration_room_cents(portfolio_cents, position_cents, max_stock_bps)
     if stock_room <= 0:
         return Decision(symbol, "hold", "Stock exposure has reached its limit.")
 

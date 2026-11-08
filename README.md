@@ -39,6 +39,40 @@ session. Cash, holdings, and order budget use integer cents. The engine consumes
 snapshot and returns a proposal with the latest session, model errors, and individual
 reasons. Each request is independent.
 
+## Check portfolio risk
+
+In the local API docs, open `POST /risk` and paste this example. The prices are
+illustrative. Supply one closing price per asset for the same session, including
+an entry with zero shares for any new symbol you want to preview.
+
+```json
+{
+  "as_of_session": "2026-11-06",
+  "cash_cents": 630000,
+  "max_stock_bps": 2000,
+  "max_sector_bps": 4000,
+  "assets": [
+    {"symbol": "QQQ", "sector": "equity-etf", "shares": "6", "close_cents": 45000},
+    {"symbol": "SPY", "sector": "equity-etf", "shares": "2", "close_cents": 50000}
+  ],
+  "paper_buy": {"symbol": "QQQ", "amount_cents": 50000}
+}
+```
+
+The report marks share quantities to cents and includes cash in total portfolio
+value. It returns current weights, concentration flags, and room under each cap.
+Divide basis points by 100 to read them as percentages. Sectors are the groups
+you assign to the assets. A cash-only snapshot works with an empty asset list.
+
+In this example QQQ starts at 27%, seven percentage points over its cap. The
+$500 preview moves it to 32% and moves the ETF group from 37% to 42%. The status
+is `exceeds_limits`, with zero available room for a QQQ buy. An affordable
+preview shows the hypothetical result even when a cap would be exceeded.
+An `insufficient_cash` preview returns a null projection. Omit `paper_buy` to
+see the current exposure only.
+
+The preview assumes fractional shares, a fixed price, and zero fees.
+
 ## Forecast equations
 
 | Step | Method |
