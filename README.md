@@ -139,6 +139,32 @@ least 121 earlier trading closes. The optional decision log records the
 forecast, gate result, portfolio decision, and fill cost for each candidate
 and profile. Choose a fresh log filename for each run.
 
+## Entry timing with matched exposure
+
+To check the value of entry timing, the control takes each profile's filled
+buys and samples new trading days within the same months. Each control keeps
+the ETF, dollar amount, fee, and final valuation date for every buy. It uses the
+same next-open fill model. A control qualifies when invested capital-days are
+within 0.5% of the observed schedule for each ETF. Capital-days equal invested
+notional times the number of trading sessions held.
+
+| Profile | Observed ending equity | Median control | Control 5th–95th percentile | Controls below observed |
+| --- | ---: | ---: | ---: | ---: |
+| Standard | $11,445.22 | $11,456.77 | $11,443.29–$11,470.28 | 8.3% |
+| Tight | $10,418.28 | $10,425.18 | $10,416.90–$10,435.50 | 8.8% |
+
+Both observed schedules finished below most of the 2,000 controls per profile.
+The comparison is retrospective and conditional on the fills that already
+occurred. The original replay determines which orders passed the portfolio
+limits. The controls move those orders and measure ending equity with similar
+capital-days. This tests entry timing within a month on this historical path.
+
+```powershell
+.\.venv\Scripts\python.exe -m market_sandbox.timing_control --spy-csv SPY.csv --qqq-csv QQQ.csv --start 2024-01-01 --end 2025-12-31
+```
+
+The command uses the same CSVs as the paper replay and a fixed random seed of 42.
+
 ## Source map
 
 - `market_sandbox/forecast.py` builds features, fits the model, and measures forecast error.
@@ -147,3 +173,4 @@ and profile. Choose a fresh log filename for each run.
 - `market_sandbox/demo.py` provides synthetic inputs and a local demo.
 - `market_sandbox/backtest.py` scores the model against a zero-return baseline.
 - `market_sandbox/paper_replay.py` replays portfolio decisions and simulates fills.
+- `market_sandbox/timing_control.py` compares entry timing with similar exposure.
