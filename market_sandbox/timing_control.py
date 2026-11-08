@@ -15,6 +15,7 @@ import numpy as np
 from .paper_replay import Bar, Portfolio, ReplayResult, load_bars, replay
 
 CONTROL_RUNS = 2_000
+ATTEMPTS_PER_CONTROL = 500
 SEED = 42
 EXPOSURE_TOLERANCE_DIVISOR = 200  # 0.5% per ETF
 
@@ -30,6 +31,7 @@ class Buy:
 @dataclass(frozen=True)
 class TimingReport:
     fills: int
+    control_count: int
     observed_cents: int
     control_p05_cents: float
     control_median_cents: float
@@ -48,6 +50,7 @@ def exposure_days(buys: list[Buy], days: list[int], session_count: int) -> Count
 def matched_days(
     buys: list[Buy], sessions: list[date], runs: int, rng: Random
 ) -> Iterator[list[int]]:
+    """Yield up to the requested number of matches within the sampling budget."""
     days_by_month = defaultdict(list)
     for index, session in enumerate(sessions):
         days_by_month[session.year, session.month].append(index)
@@ -59,7 +62,7 @@ def matched_days(
 
     original = exposure_days(buys, [buy.day for buy in buys], len(sessions))
     accepted = 0
-    for _ in range(max(10_000, runs * 100)):
+    for _ in range(max(10_000, runs * ATTEMPTS_PER_CONTROL)):
         days = [0] * len(buys)
         for month, indexes in buys_by_month.items():
             for index, day in zip(indexes, rng.sample(days_by_month[month], len(indexes)), strict=True):
@@ -74,11 +77,6 @@ def matched_days(
             accepted += 1
             if accepted == runs:
                 return
-
-    raise ValueError(
-        f"Found only {accepted} of {runs} requested exposure matches. "
-        "The trade schedule may leave too few eligible alternatives."
-    )
 
 
 def ending_equity(
@@ -126,14 +124,20 @@ def compare_timing(
             ending_equity(buys, days, opens, closes, Portfolio(observed.limits))
             for days in matched_days(buys, sessions, runs, Random(seed))
         ]
+        if not controls:
+            continue
+
         p05, median, p95 = np.quantile(controls, [0.05, 0.50, 0.95])
         reports[name] = TimingReport(
             fills=len(buys),
+            control_count=len(controls),
             observed_cents=observed.equity_cents,
             control_p05_cents=float(p05),
             control_median_cents=float(median),
             control_p95_cents=float(p95),
-            share_below_observed=sum(value < observed.equity_cents for value in controls) / runs,
+            share_below_observed=(
+                sum(value < observed.equity_cents for value in controls) / len(controls)
+            ),
         )
     return reports
 
@@ -153,15 +157,19 @@ def main() -> None:
         parser.error(str(exc))
 
     first, last = result.log[0].target_session, result.log[-1].target_session
-    print(f"Target sessions: {first} to {last} | {CONTROL_RUNS:,} controls per profile | seed {SEED}")
-    for name in result.portfolios:
+    print(f"Target sessions: {first} to {last} | target {CONTROL_RUNS:,} controls per profile | seed {SEED}")
+    for name, portfolio in result.portfolios.items():
         if name not in reports:
-            print(f"{name}: 0 fills to compare")
+            if portfolio.fills:
+                print(f"{name}: {portfolio.fills} fills | 0 controls matched within the sampling budget")
+            else:
+                print(f"{name}: 0 fills to compare")
             continue
 
         report = reports[name]
         print(
-            f"{name}: {report.fills} fills | observed ${report.observed_cents / 100:,.2f} "
+            f"{name}: {report.fills} fills | {report.control_count:,} matched controls "
+            f"| observed ${report.observed_cents / 100:,.2f} "
             f"| control median ${report.control_median_cents / 100:,.2f} "
             f"| 5th–95th percentile ${report.control_p05_cents / 100:,.2f}"
             f"–${report.control_p95_cents / 100:,.2f} "
