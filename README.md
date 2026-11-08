@@ -139,6 +139,58 @@ least 121 earlier trading closes. The optional decision log records the
 forecast, gate result, portfolio decision, and fill cost for each candidate
 and profile. Choose a fresh log filename for each run.
 
+## Entry timing with matched exposure
+
+To check the value of entry timing, the control takes each profile's filled
+buys and samples new trading days within the same months. Each control keeps
+the ETF, dollar amount, fee, and final valuation date for every buy. It uses the
+same next-open fill model. A control qualifies when invested capital-days are
+within 0.5% of the observed schedule for each ETF. Capital-days equal invested
+notional times the number of trading sessions held.
+
+| Profile | Observed ending equity | Median control | Control 5th–95th percentile | Controls below observed |
+| --- | ---: | ---: | ---: | ---: |
+| Standard | $11,445.22 | $11,456.77 | $11,443.29–$11,470.28 | 8.3% |
+| Tight | $10,418.28 | $10,425.18 | $10,416.90–$10,435.50 | 8.8% |
+
+Both observed schedules finished below most of the 2,000 controls per profile.
+The comparison is retrospective and conditional on the fills that already
+occurred. The original replay determines which orders passed the portfolio
+limits. The controls move those orders and measure ending equity with similar
+capital-days. This tests entry timing within a month on this historical path.
+
+```powershell
+.\.venv\Scripts\python.exe -m market_sandbox.timing_control --spy-csv SPY.csv --qqq-csv QQQ.csv --start 2024-01-01 --end 2025-12-31
+```
+
+The command uses the same CSVs as the paper replay and a fixed random seed of 42.
+It reports the actual number of matches when the sampling budget runs out.
+
+## Forward validation in 2026
+
+The same model, signal cutoff, portfolio rules, cost assumptions, and 0.5%
+matching tolerance were applied to a separate period. The run scored 214
+sessions from January 2 through November 6, 2026, using the same data exports.
+Each forecast still uses only observations available at the prior close.
+
+| ETF | Ridge / zero-return RMSE, all sessions | Gate passed | Ridge / zero-return RMSE, gate passed |
+| --- | ---: | ---: | ---: |
+| SPY | 90.240 / **87.252** bps | 6 of 214 | 229.709 / **203.330** bps |
+| QQQ | 146.232 / **138.444** bps | 9 of 214 | 205.755 / **150.451** bps |
+
+| Profile | Fills | Ending equity | Max drawdown | Median control | Controls below observed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Standard | 13 | $10,059.34 | 3.88% | $10,078.60 | 9.3% |
+| Tight | 6 | $10,095.40 | 1.27% | $10,101.66 | 9.8% |
+
+Zero return again had lower error on both ETFs, including the sessions that
+passed the gate. Both portfolios also finished below most of their 2,000
+matched control draws. The control comparison is conditional on the filled
+orders and describes the observed historical path.
+
+To reproduce, use start `2026-01-01` and end `2026-11-06` with the benchmark,
+paper replay, and timing control commands above.
+
 ## Source map
 
 - `market_sandbox/forecast.py` builds features, fits the model, and measures forecast error.
@@ -147,3 +199,4 @@ and profile. Choose a fresh log filename for each run.
 - `market_sandbox/demo.py` provides synthetic inputs and a local demo.
 - `market_sandbox/backtest.py` scores the model against a zero-return baseline.
 - `market_sandbox/paper_replay.py` replays portfolio decisions and simulates fills.
+- `market_sandbox/timing_control.py` compares entry timing with similar exposure.
