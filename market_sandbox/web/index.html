@@ -35,7 +35,8 @@
       <button type="submit" aria-label="Find symbol"><svg class="icon"><use href="#icon-arrow"/></svg></button>
     </form>
     <div class="topbar-right">
-      <span id="connection" class="connection" data-state="connecting"><i></i><span>Connecting</span></span>
+      <span id="connection" class="connection" data-sandbox data-state="connecting"><i></i><span>Connecting</span></span>
+      <span id="broker-indicator" class="connection" data-alpaca data-state="connecting"><i></i><span id="broker-indicator-label">Checking Alpaca</span></span>
       <div class="mode-switch" role="group" aria-label="Trading environment">
         <button id="mode-sandbox" type="button" aria-pressed="true">Sandbox</button>
         <button id="mode-alpaca" type="button" aria-pressed="false">Alpaca Paper</button>
@@ -84,6 +85,7 @@
               <dl class="metrics"><div><dt>Account value</dt><dd id="broker-equity">—</dd></div><div><dt>Cash</dt><dd id="broker-cash">—</dd></div></dl>
               <button type="button" class="button secondary" id="broker-refresh">Refresh account</button>
               <p id="broker-connection" class="broker-note" role="status"></p>
+              <p id="broker-setup" class="broker-note" hidden>Set <code>ALPACA_PAPER_KEY_ID</code> and <code>ALPACA_PAPER_SECRET_KEY</code> in the PowerShell window that starts the server, then restart it.</p>
             </div>
           </section>
           <section class="panel" data-alpaca aria-labelledby="broker-watch-heading">
@@ -177,6 +179,14 @@
                   <label><span class="field-label">Position cap (%)</span><input id="bot-position-cap" type="number" min="0.01" max="100" step="0.01" value="20" required></label>
                   <label><span class="field-label">Invested cap (%)</span><input id="bot-invested-cap" type="number" min="0.01" max="100" step="0.01" value="40" required></label>
                 </div>
+                <div class="bot-exit-settings">
+                  <label class="bot-exit-toggle"><input id="bot-exits" type="checkbox" aria-describedby="bot-exits-help">Allow automatic sells of watched holdings</label>
+                  <p id="bot-exits-help" class="broker-note">Includes shares bought manually. Checked once per session.</p>
+                  <div class="bot-limits" id="bot-exit-limits" hidden>
+                    <label><span class="field-label">Loss threshold (%)</span><input id="bot-stop-loss" type="number" min="0.01" max="100" step="0.01" value="5" required disabled></label>
+                    <label><span class="field-label">Gain threshold (%)</span><input id="bot-take-profit" type="number" min="0.01" max="100" step="0.01" value="10" required disabled></label>
+                  </div>
+                </div>
                 <div class="bot-actions"><button type="submit" class="button secondary" id="bot-review" disabled>Run forecast</button><button type="button" class="button primary" id="bot-arm" disabled>Arm bot</button><button type="button" class="button secondary" id="bot-pause" disabled>Pause</button></div>
               </form>
               <p id="bot-error" class="broker-note error-note" role="status" hidden></p>
@@ -190,6 +200,11 @@
           <section class="panel" data-alpaca aria-labelledby="broker-orders-heading">
             <header class="panel-heading"><h2 id="broker-orders-heading">Activity</h2><span class="section-tag">ORDERS</span></header>
             <div class="table-wrap"><table><thead><tr><th>Order</th><th>Status</th><th>Action</th></tr></thead><tbody id="broker-order-rows"></tbody></table></div>
+          </section>
+          <section class="panel" data-alpaca aria-labelledby="broker-audit-heading">
+            <header class="panel-heading"><h2 id="broker-audit-heading">Decision Journal</h2><span class="section-tag">LOCAL</span></header>
+            <p id="broker-audit-message" class="broker-note audit-message">Connect Alpaca Paper to view the journal.</p>
+            <ul id="broker-audit-rows" class="audit-rows"></ul>
           </section>
         </aside>
       </div>

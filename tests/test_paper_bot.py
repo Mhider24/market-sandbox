@@ -1,20 +1,27 @@
 import unittest
 from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi import HTTPException, Request
 
 from market_sandbox.alpaca import AlpacaError, AlpacaPaper, DATA_URL, PAPER_URL
-from market_sandbox.broker_api import local_desk
+from market_sandbox.broker_api import SettingsRequest, local_desk
 from market_sandbox.forecast import Forecast, MIN_CLOSES
+from market_sandbox.paper_audit import AuditUnavailable, PaperAudit
 from market_sandbox.paper_bot import BotSettings, PaperDesk, PaperRuleError
 
 TODAY = date(2026, 11, 9)
 SESSIONS = [TODAY - timedelta(days=day) for day in range(MIN_CLOSES, 0, -1)]
 PASSING = Forecast(30.0, 100.0, 50.0, 80.0, 40)
 FAILING = Forecast(30.0, 100.0, 90.0, 80.0, 40)
+LONG_SPY = {
+    "asset_class": "us_equity", "symbol": "SPY", "market_value": "100",
+    "qty": "1.25", "qty_available": "0.75", "unrealized_plpc": "-0.05",
+}
 
 
 class FakeBroker:
@@ -125,6 +132,78 @@ class PaperDeskTests(unittest.TestCase):
         self.desk.configure(self.settings)
         self.desk.tick()
         self.assertEqual(self.broker.sent[f"ms-auto-{TODAY}"]["notional"], "1.00")
+
+    @patch("market_sandbox.paper_bot.forecast_next_close", return_value=PASSING)
+    def test_opt_in_sell_takes_priority_and_uses_available_shares(self, forecast):
+        self.broker.held = [LONG_SPY]
+        settings = SettingsRequest(symbols=["QQQ", "SPY"], manage_exits=True).settings()
+        review = self.desk.review(settings)
+        self.assertEqual(review["proposal"]["side"], "sell")
+        self.assertEqual(self.broker.submissions, 0)
+
+        self.desk.configure(settings)
+        self.desk.tick()
+        order = self.broker.sent[f"ms-auto-{TODAY}"]
+        self.assertEqual((order["symbol"], order["side"], order["qty"]), ("SPY", "sell", "0.75"))
+
+        restarted = PaperDesk(self.broker)
+        restarted.configure(settings)
+        restarted.tick()
+        self.assertEqual(self.broker.submissions, 1)
+
+    @patch("market_sandbox.paper_bot.forecast_next_close")
+    def test_exits_respect_opt_in_watchlist_and_validation_gate(self, forecast):
+        self.broker.held = [{**LONG_SPY, "unrealized_plpc": "0.01"}]
+        forecast.return_value = Forecast(-30.0, 100.0, 50.0, 80.0, 40)
+        self.assertIsNone(self.desk.review(self.settings)["proposal"])
+        self.assertIsNone(self.desk.review(BotSettings(("QQQ",), manage_exits=True))["proposal"])
+        settings = BotSettings(("SPY",), manage_exits=True)
+        self.assertIn("Negative forecast", self.desk.review(settings)["proposal"]["reason"])
+        forecast.return_value = Forecast(-30.0, 100.0, 90.0, 80.0, 40)
+        self.assertIsNone(self.desk.review(settings)["proposal"])
+
+        self.broker.held = [{**LONG_SPY, "unrealized_plpc": "0.10"}]
+        with patch.object(self.broker, "bars", return_value={}):
+            self.assertIn("gain threshold", self.desk.review(settings)["proposal"]["reason"])
+
+    @patch("market_sandbox.paper_bot.forecast_next_close", return_value=PASSING)
+    def test_sell_pauses_if_available_shares_change(self, forecast):
+        self.desk.configure(BotSettings(("SPY",), manage_exits=True))
+        remaining = {**LONG_SPY, "qty_available": "0.25"}
+        with patch.object(self.broker, "positions", side_effect=[[LONG_SPY], [remaining]]):
+            self.desk.tick()
+        self.assertEqual(self.broker.submissions, 0)
+        self.assertFalse(self.desk.status()["armed"])
+        self.assertIn("Available paper shares changed", self.desk.status()["message"])
+
+    @patch("market_sandbox.paper_bot.forecast_next_close", return_value=PASSING)
+    def test_audit_survives_restart_and_is_scoped_to_credentials(self, forecast):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "paper.sqlite3"
+            desk = PaperDesk(self.broker, PaperAudit(path, "paper-account"))
+            desk.review(self.settings)
+            desk.configure(self.settings)
+            desk.tick()
+            events = PaperAudit(path, "paper-account").recent()
+            self.assertEqual([event["event"] for event in events], ["auto_order", "auto_intent", "armed", "review"])
+            self.assertEqual(events[1]["detail"]["proposal"]["amount_cents"], 5_000)
+            self.assertEqual(events[0]["detail"]["status"], "new")
+            self.assertEqual(PaperAudit(path, "other-account").recent(), [])
+
+    @patch("market_sandbox.paper_bot.forecast_next_close", return_value=PASSING)
+    def test_audit_failure_blocks_new_auto_orders_but_allows_cancellation(self, forecast):
+        existing = self.desk.manual("SPY", "buy", "ms-manual-1", 1000, None)
+        with TemporaryDirectory() as directory:
+            audit = PaperAudit(Path(directory) / "paper.sqlite3", "paper-account")
+            desk = PaperDesk(self.broker, audit)
+            desk.configure(self.settings)
+            with patch.object(audit, "record", side_effect=AuditUnavailable("Paper journal unavailable.")):
+                desk.tick()
+                self.assertEqual(self.broker.submissions, 1)
+                self.assertFalse(desk.status()["armed"])
+                desk.configure(None)
+                desk.cancel(existing["id"])
+            self.assertEqual(self.broker.cancelled, [existing["id"]])
 
     def test_manual_order_pauses_and_reconciles_a_lost_response(self):
         self.desk.configure(self.settings)

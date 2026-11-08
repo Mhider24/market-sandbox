@@ -15,6 +15,7 @@ let manualRequest;
 let submitting = false;
 let knownOrderId;
 let userChoseMode = false;
+let hasPendingOrders = false;
 
 function note(id, text) {
   const node = byId(id);
@@ -60,7 +61,10 @@ function showReview(review) {
   if (!review) return;
 
   const proposal = review.proposal;
-  root.append(text("strong", proposal ? "Candidate · " + proposal.symbol + " " + money(proposal.amount_cents / 100) : "Hold"));
+  let headline = "Hold";
+  if (proposal?.side === "sell") headline = "Sell candidate · " + proposal.quantity + " shares of " + proposal.symbol;
+  else if (proposal) headline = "Buy candidate · " + proposal.symbol + " " + money(proposal.amount_cents / 100);
+  root.append(text("strong", headline));
   root.append(text("p", "Data through " + review.data_through));
   const list = document.createElement("ul");
   for (const candidate of review.candidates) {
@@ -85,9 +89,13 @@ function showWatchlist() {
 }
 
 function showStatus(next) {
+  const previous = status;
   status = next;
   note("bot-mode", status.armed ? "ARMED" : "PAUSED");
   note("bot-status", status.configured ? status.message : "Set the Alpaca Paper keys on the server to connect.");
+  byId("broker-setup").hidden = status.configured;
+  if (!status.configured) showConnection("connecting", "Alpaca keys missing");
+  else if (!previous?.configured) showConnection("connecting", "Checking Alpaca");
   byId("bot-arm").disabled = !status.configured || status.armed;
   byId("bot-pause").disabled = !status.configured || !status.armed;
   byId("bot-review").disabled = !status.configured;
@@ -98,11 +106,16 @@ function showStatus(next) {
     "bot-budget": status.settings.max_order_cents / 100,
     "bot-position-cap": status.settings.position_cap_bps / 100,
     "bot-invested-cap": status.settings.invested_cap_bps / 100,
+    "bot-stop-loss": status.settings.stop_loss_bps / 100,
+    "bot-take-profit": status.settings.take_profit_bps / 100,
   };
   for (const [id, value] of Object.entries(fields)) {
     byId(id).disabled = status.armed;
     if (status.armed) byId(id).value = value;
   }
+  byId("bot-exits").disabled = status.armed;
+  if (status.armed) byId("bot-exits").checked = status.settings.manage_exits;
+  updateExitFields();
   showReview(status.review);
   showWatchlist();
   const orderId = status.last_order?.id;
@@ -110,17 +123,53 @@ function showStatus(next) {
   knownOrderId = orderId;
 }
 
+function updateExitFields() {
+  const enabled = byId("bot-exits").checked;
+  byId("bot-exit-limits").hidden = !enabled;
+  byId("bot-stop-loss").disabled = !enabled || Boolean(status?.armed);
+  byId("bot-take-profit").disabled = !enabled || Boolean(status?.armed);
+}
+
+function showConnection(state, label) {
+  byId("broker-indicator").dataset.state = state;
+  note("broker-indicator-label", label);
+}
+
+async function refreshAudit() {
+  if (!status?.configured || document.body.dataset.mode !== "alpaca") return;
+  const list = byId("broker-audit-rows");
+  try {
+    const {events} = await api("audit");
+    list.replaceChildren();
+    note("broker-audit-message", events.length ? "" : "No events yet. Run a forecast to start the journal.");
+    for (const entry of events) {
+      const item = document.createElement("li");
+      const time = text("time", new Date(entry.timestamp).toLocaleString());
+      time.dateTime = entry.timestamp;
+      item.append(time, text("span", entry.summary));
+      const reason = entry.detail.proposal?.reason;
+      if (reason) item.append(text("small", reason));
+      list.append(item);
+    }
+  } catch (error) {
+    note("broker-audit-message", error.message);
+  }
+}
+
 async function refreshStatus() {
   try {
     showStatus(await api("status"));
   } catch (error) {
+    showConnection("offline", "Alpaca status unavailable");
     note("bot-error", error.message);
   }
+  await refreshAudit();
 }
 
 async function refreshAccount() {
   try {
     const account = await api("account");
+    showConnection("ready", "Alpaca connected");
     note("broker-connection", "Alpaca Paper connected");
     note("broker-equity", money(account.equity));
     note("broker-cash", money(account.cash));
@@ -135,6 +184,7 @@ async function refreshAccount() {
 
     const orders = byId("broker-order-rows");
     orders.replaceChildren();
+    hasPendingOrders = account.orders.some(order => cancelable.has(order.status));
     for (const order of account.orders) {
       const action = text("span", "—");
       if (cancelable.has(order.status) && /^ms-(auto|manual)-/.test(order.client_order_id ?? "")) {
@@ -155,10 +205,17 @@ async function refreshAccount() {
         });
         action.replaceChildren(button);
       }
-      tableRow(orders, [order.side.toUpperCase() + " " + order.symbol, order.status.replaceAll("_", " "), action]);
+      const orderStatus = text("span", order.status.replaceAll("_", " "));
+      if (order.filled_avg_price != null) {
+        const fill = text("small", order.filled_qty + " @ " + money(order.filled_avg_price));
+        fill.className = "order-fill";
+        orderStatus.append(fill);
+      }
+      tableRow(orders, [order.side.toUpperCase() + " " + order.symbol, orderStatus, action]);
     }
     if (!orders.children.length) tableRow(orders, ["No orders", "—", "—"]);
   } catch (error) {
+    showConnection("offline", "Alpaca unavailable");
     note("broker-connection", error.message);
   }
 }
@@ -214,17 +271,26 @@ function setMode(mode) {
   byId("positions-link").href = alpaca ? "#broker-positions" : "#positions-panel";
   byId("ticket-link").href = alpaca ? "#broker-ticket" : "#ticket";
   if (alpaca) {
-    if (status?.configured) refreshAccount();
+    if (status?.configured) {
+      refreshAccount();
+      refreshAudit();
+    }
     loadChart(selected);
   }
 }
 
 function settings() {
+  const manageExits = byId("bot-exits").checked;
   return {
     symbols: byId("bot-symbols").value.split(",").map(symbol => symbol.trim().toUpperCase()).filter(Boolean),
     max_order_cents: Math.round(byId("bot-budget").valueAsNumber * 100),
     position_cap_bps: Math.round(byId("bot-position-cap").valueAsNumber * 100),
     invested_cap_bps: Math.round(byId("bot-invested-cap").valueAsNumber * 100),
+    manage_exits: manageExits,
+    ...(manageExits && {
+      stop_loss_bps: Math.round(byId("bot-stop-loss").valueAsNumber * 100),
+      take_profit_bps: Math.round(byId("bot-take-profit").valueAsNumber * 100),
+    }),
   };
 }
 
@@ -236,6 +302,8 @@ async function botAction(action, payload) {
     else showStatus(result);
   } catch (error) {
     note("bot-error", error.message);
+  } finally {
+    await refreshAudit();
   }
 }
 
@@ -255,10 +323,16 @@ byId("bot-form").addEventListener("submit", event => {
   botAction("review", settings());
 });
 byId("bot-arm").addEventListener("click", () => {
-  if (byId("bot-form").reportValidity() && window.confirm("Arm the bot to submit Alpaca paper buys?")) {
-    botAction("arm", settings());
+  if (!byId("bot-form").reportValidity()) return;
+  const config = settings();
+  const prompt = config.manage_exits
+    ? "Arm Alpaca paper buys and allow the bot to sell watched long holdings, including shares bought manually?"
+    : "Arm the bot to submit Alpaca paper buys?";
+  if (window.confirm(prompt)) {
+    botAction("arm", config);
   }
 });
+byId("bot-exits").addEventListener("change", updateExitFields);
 byId("bot-pause").addEventListener("click", () => botAction("pause"));
 byId("broker-side").addEventListener("change", () => {
   const sell = byId("broker-order-form").elements.side.value === "sell";
@@ -308,5 +382,8 @@ refreshStatus().then(() => {
   else if (status?.configured && document.body.dataset.mode === "alpaca") setMode("alpaca");
 });
 setInterval(() => {
-  if (document.body.dataset.mode === "alpaca") refreshStatus();
+  if (document.body.dataset.mode === "alpaca") {
+    refreshStatus();
+    if (hasPendingOrders) refreshAccount();
+  }
 }, 15000);

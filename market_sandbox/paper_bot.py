@@ -6,8 +6,9 @@ from decimal import Decimal
 from threading import Event, RLock
 
 from .alpaca import AlpacaError, AlpacaPaper
-from .forecast import MIN_CLOSES, forecast_next_close
-from .policy import Candidate, check_candidate, select_candidate
+from .forecast import BPS_PER_UNIT, MIN_CLOSES, Forecast, forecast_next_close
+from .paper_audit import AuditUnavailable, PaperAudit
+from .policy import MIN_FORECAST_BPS, Candidate, check_candidate, concentration_room_cents, select_candidate
 
 POLL_SECONDS = 60
 EQUITY_GROUP = "US equities"
@@ -23,6 +24,9 @@ class BotSettings:
     max_order_cents: int = 5_000
     position_cap_bps: int = 2_000
     invested_cap_bps: int = 4_000
+    manage_exits: bool = False
+    stop_loss_bps: int = 500
+    take_profit_bps: int = 1_000
 
 
 def _utc_date(clock: dict) -> date:
@@ -33,17 +37,52 @@ def _money_cents(value) -> int:
     return int(Decimal(str(value)) * 100)
 
 
+def _available_shares(position: dict) -> Decimal:
+    return min(Decimal(str(position["qty"])), Decimal(str(position.get("qty_available", position["qty"]))))
+
+
+def _long_positions(positions: list[dict]) -> dict[str, dict]:
+    result = {}
+    for position in positions:
+        if (
+            position["asset_class"] != "us_equity"
+            or Decimal(position["qty"]) < 0
+            or _money_cents(position["market_value"]) < 0
+        ):
+            raise PaperRuleError("Automation requires a long-only US equity paper portfolio.")
+        result[position["symbol"]] = position
+    return result
+
+
+def _exit_signal(
+    settings: BotSettings, position: dict | None, forecast: Forecast | None
+) -> tuple[int, str] | None:
+    if not settings.manage_exits or position is None or _available_shares(position) <= 0:
+        return None
+    plpc = position.get("unrealized_plpc")
+    if plpc is not None:
+        return_bps = Decimal(str(plpc)) * BPS_PER_UNIT
+        if return_bps <= -settings.stop_loss_bps:
+            return (0, "Paper position reached the configured loss threshold.")
+        if return_bps >= settings.take_profit_bps:
+            return (1, "Paper position reached the configured gain threshold.")
+    if forecast and forecast.beats_baseline and forecast.next_log_return_bps <= -MIN_FORECAST_BPS:
+        return (2, "Negative forecast cleared the baseline gate.")
+    return None
+
+
 def _public_order(order: dict) -> dict:
     fields = (
         "id", "client_order_id", "symbol", "side", "status",
-        "notional", "qty", "filled_qty", "submitted_at",
+        "notional", "qty", "filled_qty", "filled_avg_price", "submitted_at",
     )
     return {name: order.get(name) for name in fields}
 
 
 class PaperDesk:
-    def __init__(self, broker: AlpacaPaper | None):
+    def __init__(self, broker: AlpacaPaper | None, audit: PaperAudit | None = None):
         self.broker = broker
+        self.audit = audit
         self.settings = BotSettings()
         self.armed = Event()
         self.wake = Event()
@@ -53,6 +92,13 @@ class PaperDesk:
         self.last_order: dict | None = None
         self.review_result: dict | None = None
         self.message = "Automation paused."
+
+    def _record(self, event: str, summary: str, detail: dict | None = None) -> None:
+        if self.audit is not None:
+            self.audit.record(event, summary, detail)
+
+    def recent_events(self) -> list[dict]:
+        return self.audit.recent() if self.audit is not None else []
 
     def _broker(self) -> AlpacaPaper:
         if self.broker is None:
@@ -70,14 +116,21 @@ class PaperDesk:
         }
 
     def configure(self, settings: BotSettings | None) -> None:
+        was_armed = self.armed.is_set()
         if settings is None:
             self.armed.clear()
         with self.lock:
             if settings is None:
                 self.armed.clear()
                 self.message = "Automation paused."
+                if was_armed:
+                    try:
+                        self._record("paused", self.message)
+                    except AuditUnavailable:
+                        self.message += " The paper journal is unavailable."
             else:
                 self._broker()
+                self._record("armed", "Paper automation armed.", asdict(settings))
                 self.settings = settings
                 self.armed.set()
                 self.message = "Automation armed for the next regular session check."
@@ -126,6 +179,9 @@ class PaperDesk:
             broker = self._broker()
             clock = broker.clock()
             self.review_result = self._evaluate(settings, _utc_date(clock))
+            proposal = self.review_result["proposal"]
+            outcome = f"{proposal['side']} {proposal['symbol']}" if proposal else "hold"
+            self._record("review", f"Dry forecast result · {outcome}.", self.review_result)
             return self.review_result
 
     def _evaluate(self, settings: BotSettings, today: date) -> dict:
@@ -138,28 +194,37 @@ class PaperDesk:
             raise PaperRuleError("Alpaca returned too few completed market sessions.")
 
         by_symbol = broker.bars(settings.symbols, start, today)
-        account, positions = broker.account(), broker.positions()
-        holdings = {}
-        for position in positions:
-            market_value = _money_cents(position["market_value"])
-            if position["asset_class"] != "us_equity" or Decimal(position["qty"]) < 0 or market_value < 0:
-                raise PaperRuleError("Automation requires a long-only US equity paper portfolio.")
-            holdings[position["symbol"]] = market_value
+        account, positions = broker.account(), _long_positions(broker.positions())
+        holdings = {symbol: _money_cents(position["market_value"]) for symbol, position in positions.items()}
 
         cash = max(0, min(_money_cents(account["cash"]), _money_cents(account["buying_power"])))
         assessments = []
-        unavailable = {}
+        candidates = []
+        exits = []
         for symbol in settings.symbols:
             closes = {
                 bar["t"][:10]: bar["c"]
                 for bar in by_symbol.get(symbol, [])
                 if bar["t"][:10] < today.isoformat()
             }
-            if any(session not in closes for session in sessions[-MIN_CLOSES:]):
-                unavailable[symbol] = "Completed IEX daily bars are missing."
+            forecast = None
+            if all(session in closes for session in sessions[-MIN_CLOSES:]):
+                history = [closes[session] for session in sessions if session in closes]
+                forecast = forecast_next_close(history)
+
+            position = positions.get(symbol)
+            exit_signal = _exit_signal(settings, position, forecast)
+            metrics = asdict(forecast) if forecast else {}
+            if exit_signal:
+                priority, reason = exit_signal
+                quantity = format(_available_shares(position), "f")
+                exits.append((priority, symbol, quantity, reason))
+                candidates.append({"symbol": symbol, **metrics, "reason": reason})
                 continue
-            history = [closes[session] for session in sessions if session in closes]
-            forecast = forecast_next_close(history)
+            if forecast is None:
+                candidates.append({"symbol": symbol, "reason": "Completed IEX daily bars are missing."})
+                continue
+
             candidate = Candidate(symbol, EQUITY_GROUP, forecast)
             decision = check_candidate(
                 candidate,
@@ -173,29 +238,25 @@ class PaperDesk:
                 excluded_sectors=set(),
             )
             assessments.append((candidate, decision))
+            reason = decision.reason
+            if 0 < decision.max_buy_cents < 100:
+                reason = "Available amount is below the $1 order minimum."
+            candidates.append({"symbol": symbol, **metrics, "reason": reason})
 
         eligible = [(candidate, decision) for candidate, decision in assessments if decision.max_buy_cents >= 100]
         selected = select_candidate(eligible, set())
         proposal = None
-        if selected:
+        if exits:
+            _, symbol, quantity, reason = min(exits)
+            proposal = {"side": "sell", "symbol": symbol, "quantity": quantity, "reason": reason}
+        elif selected:
             candidate, decision = selected
-            proposal = {"symbol": candidate.symbol, "amount_cents": decision.max_buy_cents}
+            proposal = {"side": "buy", "symbol": candidate.symbol, "amount_cents": decision.max_buy_cents}
         return {
             "trade_session": today.isoformat(),
             "data_through": sessions[-1],
             "proposal": proposal,
-            "candidates": [
-                {
-                    "symbol": candidate.symbol,
-                    **asdict(candidate.forecast),
-                    "reason": (
-                        "Available amount is below the $1 order minimum."
-                        if 0 < decision.max_buy_cents < 100
-                        else decision.reason
-                    ),
-                }
-                for candidate, decision in assessments
-            ] + [{"symbol": symbol, "reason": reason} for symbol, reason in unavailable.items()],
+            "candidates": candidates,
         }
 
     def tick(self) -> None:
@@ -206,12 +267,20 @@ class PaperDesk:
                 return
             try:
                 self._trade_session()
-            except (AlpacaError, PaperRuleError) as error:
+            except (AlpacaError, AuditUnavailable, PaperRuleError) as error:
                 self.armed.clear()
                 self.message = f"Automation paused. {error}"
+                self._record_failure()
             except (ArithmeticError, AttributeError, KeyError, TypeError, ValueError):
                 self.armed.clear()
                 self.message = "Automation paused because broker data could not be validated."
+                self._record_failure()
+
+    def _record_failure(self) -> None:
+        try:
+            self._record("error", self.message)
+        except AuditUnavailable:
+            self.message += " The paper journal is unavailable."
 
     def _trade_session(self) -> None:
         broker = self._broker()
@@ -229,6 +298,7 @@ class PaperDesk:
             self.last_auto_session = today
             self.last_order = _public_order(existing)
             self.message = f"Paper order already recorded for {today}."
+            self._record("reconciled", self.message, self.last_order)
             return
         if broker.orders(status="open", limit=1):
             self.message = "Waiting for open paper orders to clear."
@@ -238,23 +308,48 @@ class PaperDesk:
         proposal = self.review_result["proposal"]
         if proposal is None:
             self.last_auto_session = today
-            self.message = f"Forecast checked for {today}. No paper buy passed the gates."
+            self.message = f"Forecast checked for {today}. Holding the paper portfolio."
+            self._record("hold", self.message, self.review_result)
             return
 
         if not self.armed.is_set() or self.stopped.is_set():
             return
         self._check_asset(proposal["symbol"])
         account = self._check_open(today)
-        if proposal["amount_cents"] > min(_money_cents(account["cash"]), _money_cents(account["buying_power"])):
-            raise PaperRuleError("Available paper cash changed before submission.")
-        if not self.armed.is_set() or self.stopped.is_set():
-            return
-        self.last_order = self._submit(
-            proposal["symbol"], "buy", client_id,
-            notional=f"{Decimal(proposal['amount_cents']) / 100:.2f}",
+        size = self._confirm_automatic_size(proposal, account)
+        self._record(
+            "auto_intent", f"Automatic paper {proposal['side']} proposed for {proposal['symbol']}.",
+            {"client_order_id": client_id, **self.review_result},
         )
+        if not self.armed.is_set() or self.stopped.is_set():
+            self._record("interrupted", "Automatic submission stopped before routing.", proposal)
+            return
+        self.last_order = self._submit(proposal["symbol"], proposal["side"], client_id, **size)
         self.last_auto_session = today
-        self.message = f"Submitted an automatic Alpaca paper buy for {proposal['symbol']}."
+        self.message = f"Alpaca recorded an automatic paper {self.last_order['side']} for {self.last_order['symbol']}."
+        self._record("auto_order", self.message, self.last_order)
+
+    def _confirm_automatic_size(self, proposal: dict, account: dict) -> dict:
+        positions = _long_positions(self._broker().positions())
+        position = positions.get(proposal["symbol"])
+        if proposal["side"] == "sell":
+            available = _available_shares(position) if position else Decimal(0)
+            quantity = Decimal(proposal["quantity"])
+            if quantity > available:
+                raise PaperRuleError("Available paper shares changed before submission.")
+            return {"qty": proposal["quantity"]}
+
+        equity = _money_cents(account["equity"])
+        position_value = _money_cents(position["market_value"]) if position else 0
+        invested = sum(_money_cents(row["market_value"]) for row in positions.values())
+        limit = min(
+            _money_cents(account["cash"]), _money_cents(account["buying_power"]),
+            concentration_room_cents(equity, position_value, self.settings.position_cap_bps),
+            concentration_room_cents(equity, invested, self.settings.invested_cap_bps),
+        )
+        if proposal["amount_cents"] > limit:
+            raise PaperRuleError("Cash or exposure room changed before submission.")
+        return {"notional": f"{Decimal(proposal['amount_cents']) / 100:.2f}"}
 
     def _check_asset(self, symbol: str) -> None:
         asset = self._broker().asset(symbol)
@@ -302,12 +397,15 @@ class PaperDesk:
                 size = {"notional": f"{Decimal(amount_cents) / 100:.2f}"}
             else:
                 position = next((row for row in broker.positions() if row["symbol"] == symbol), None)
-                available = Decimal(str(position.get("qty_available", position["qty"]))) if position else Decimal(0)
+                available = _available_shares(position) if position else Decimal(0)
                 if quantity > available:
                     raise PaperRuleError("The paper sell exceeds available long shares.")
                 size = {"qty": format(quantity, "f")}
+            self._record("manual_intent", f"Manual paper {side} requested.",
+                         {"symbol": symbol, "client_order_id": client_id, **size})
             self.last_order = self._submit(symbol, side, client_id, **size)
             self.message = f"Manual paper {side} submitted. Automation paused."
+            self._record("manual_order", self.message, self.last_order)
             return self.last_order
 
     def cancel(self, order_id: str) -> None:
@@ -320,3 +418,7 @@ class PaperDesk:
                 raise PaperRuleError("Cancel this order in Alpaca Paper because it was placed outside Market Sandbox.")
             broker.cancel(order_id)
             self.message = "Paper cancellation requested. Automation paused."
+            try:
+                self._record("cancel", self.message, _public_order(order))
+            except AuditUnavailable:
+                self.message += " The paper journal is unavailable."

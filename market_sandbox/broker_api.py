@@ -2,6 +2,7 @@
 
 from contextlib import asynccontextmanager, contextmanager
 from decimal import Decimal
+from pathlib import Path
 from threading import Thread
 from typing import Annotated, Literal
 from uuid import UUID
@@ -10,6 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from .alpaca import AlpacaError, AlpacaPaper
+from .paper_audit import AuditUnavailable, PaperAudit
 from .paper_bot import BotSettings, PaperDesk, PaperRuleError
 
 router = APIRouter(prefix="/alpaca", tags=["Alpaca Paper"])
@@ -21,7 +23,11 @@ StockSymbol = Annotated[
 
 @asynccontextmanager
 async def paper_desk_lifespan(app):
-    desk = PaperDesk(AlpacaPaper.from_env())
+    broker = AlpacaPaper.from_env()
+    audit = None
+    if broker is not None:
+        audit = PaperAudit(Path.home() / ".market-sandbox" / "paper-audit.sqlite3", broker.audit_scope)
+    desk = PaperDesk(broker, audit)
     app.state.paper_desk = desk
     worker = None
     if desk.broker is not None:
@@ -41,6 +47,9 @@ class SettingsRequest(BaseModel):
     max_order_cents: Annotated[int, Field(ge=100, le=100_000, strict=True)] = 5_000
     position_cap_bps: Annotated[int, Field(ge=1, le=10_000, strict=True)] = 2_000
     invested_cap_bps: Annotated[int, Field(ge=1, le=10_000, strict=True)] = 4_000
+    manage_exits: Annotated[bool, Field(strict=True)] = False
+    stop_loss_bps: Annotated[int, Field(ge=1, le=10_000, strict=True)] = 500
+    take_profit_bps: Annotated[int, Field(ge=1, le=10_000, strict=True)] = 1_000
 
     @model_validator(mode="after")
     def unique_symbols(self):
@@ -49,9 +58,7 @@ class SettingsRequest(BaseModel):
         return self
 
     def settings(self) -> BotSettings:
-        return BotSettings(
-            tuple(self.symbols), self.max_order_cents, self.position_cap_bps, self.invested_cap_bps
-        )
+        return BotSettings(**self.model_dump(exclude={"symbols"}), symbols=tuple(self.symbols))
 
 
 class ManualOrder(BaseModel):
@@ -90,6 +97,8 @@ def paper_errors():
         raise HTTPException(409, str(error)) from None
     except AlpacaError as error:
         raise HTTPException(502, str(error)) from None
+    except AuditUnavailable as error:
+        raise HTTPException(503, str(error)) from None
     except (ArithmeticError, AttributeError, KeyError, TypeError, ValueError):
         raise HTTPException(502, "Broker data could not be validated.") from None
 
@@ -104,6 +113,13 @@ def account(request: Request):
     desk = local_desk(request)
     with paper_errors():
         return desk.account_summary()
+
+
+@router.get("/audit")
+def audit(request: Request):
+    desk = local_desk(request)
+    with paper_errors():
+        return {"events": desk.recent_events()}
 
 
 @router.get("/history/{symbol}")
@@ -124,8 +140,9 @@ def arm(settings: SettingsRequest, request: Request):
 @router.post("/pause")
 def pause(request: Request):
     desk = local_desk(request)
-    desk.configure(None)
-    return desk.status()
+    with paper_errors():
+        desk.configure(None)
+        return desk.status()
 
 
 @router.post("/review")

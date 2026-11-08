@@ -235,6 +235,16 @@ body[data-mode="sandbox"] [data-alpaca], body[data-mode="alpaca"] [data-sandbox]
 .broker-bot { padding: 9px; }
 .broker-bot > .broker-note { margin: 0 0 9px; }
 .bot-limits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin-top: 8px; }
+.bot-exit-settings { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--line); }
+.bot-exit-toggle { display: flex; gap: 7px; align-items: center; }
+.bot-exit-toggle input { width: auto; margin: 0; accent-color: var(--amber); }
+#bot-exit-limits { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+#bot-exit-limits[hidden] { display: none; }
+.audit-message { padding: 8px 11px; }
+.audit-rows { margin: 0; padding: 0; max-height: 230px; overflow-y: auto; list-style: none; }
+.audit-rows li { padding: 8px 11px; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+.audit-rows :is(time, small) { display: block; font-size: 0.85em; color: var(--muted); }
+.order-fill { display: block; color: var(--muted); }
 .bot-actions { display: flex; flex-wrap: wrap; gap: 5px; margin: 9px 0; }
 .bot-actions .button { min-height: 29px; padding-inline: 7px; }
 .error-note { color: #ff8c8c; }

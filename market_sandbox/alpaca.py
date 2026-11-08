@@ -3,6 +3,7 @@
 import json
 import os
 from datetime import date
+from hashlib import sha256
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -25,6 +26,7 @@ class _NoRedirect(HTTPRedirectHandler):
 
 class AlpacaPaper:
     def __init__(self, key_id: str, secret: str):
+        self.audit_scope = sha256(key_id.encode()).hexdigest()
         self._headers = {
             "APCA-API-KEY-ID": key_id,
             "APCA-API-SECRET-KEY": secret,

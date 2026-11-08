@@ -69,17 +69,31 @@ date, including when run after the market closes.
 
 **Arm bot** enables automatic checks while the server is running. The bot
 checks once per minute and evaluates the first time it finds an open regular
-US session and no pending orders. It may submit one automatic paper buy per
+US session and no pending orders. It may submit one automatic paper order per
 session. Missing data or a failed forecast, cash, or exposure check can
 result in a hold. The default automated order cap is $50, the default
 position cap is 20%, and the default combined equity exposure cap is 40%.
 The historical benchmark sections below document the model's results.
+
+**Allow automatic sells of watched holdings** is off by default. When enabled,
+the bot may sell the available shares of a watched long position, including
+shares bought manually. An exit takes priority over a buy. The bot checks the
+configured loss and gain thresholds against Alpaca's unrealized position return.
+It can also exit when the model forecasts a decline of at least 10 basis points
+and beats the zero-return baseline on trailing validation. The threshold check
+runs as part of the session evaluation. Orders are market orders and the fill
+price can differ from the price at the check.
 
 **Pause** stops new automated submissions. The manual ticket supports
 cash-funded dollar buys and sells by share quantity from long holdings.
 Submitting a manual order or canceling an eligible Market Sandbox order
 also pauses the bot. Existing orders have their own status in **Activity**.
 Automation starts paused each time the server starts.
+
+**Decision Journal** shows recent forecasts, holds, submissions, and pauses.
+The history persists in `%USERPROFILE%\.market-sandbox\paper-audit.sqlite3` on
+Windows and is scoped to the paper key ID used by the server. **Activity**
+shows Alpaca's order status and reported fill quantity and average price.
 
 Broker execution uses the [Alpaca Paper Trading API](https://docs.alpaca.markets/us/docs/trading-api).
 Historical prices come from the [Alpaca Market Data API](https://docs.alpaca.markets/us/reference/stockbars).
