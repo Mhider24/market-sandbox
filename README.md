@@ -96,6 +96,49 @@ range and session count. The source data may be revised between downloads.
 
 Use `QQQ.csv` for the second run. The runner uses `Close` if you omit `--close-column`.
 
+## Historical paper-trading replay
+
+The replay uses the same SPY and QQQ exports and 502 target sessions as the
+forecast benchmark. At each prior close, the forecast gate uses the preceding
+40 realized outcomes and the 10 bp forecast cutoff. This comparison scores
+Ridge and zero return on the same sessions that passed the gate, before
+portfolio limits are applied.
+
+| ETF | Gate passed | Ridge RMSE (bps) | Zero-return RMSE (bps) |
+| --- | ---: | ---: | ---: |
+| SPY | 63 of 502 | 74.847 | **70.464** |
+| QQQ | 42 of 502 | 105.458 | **93.549** |
+
+Both profiles start with $10,000 in cash and cap each buy at $250, including
+fees. Each chooses at most one proposal at the close and rechecks exposure at
+the next open. SPY and QQQ share a single exposure bucket for this experiment.
+
+| Profile | Per-ETF / combined cap | Fills | Ending equity | Max drawdown |
+| --- | --- | ---: | ---: | ---: |
+| Standard | 20% / 40% | 17 | $11,445.22 (+14.45%) | 8.52% |
+| Tight | 5% / 10% | 6 | $10,418.28 (+4.18%) | 2.55% |
+
+On filled orders, the baseline also had lower forecast error for both
+profiles. The portfolio results describe the buy-only simulation, including
+the effect of existing ETF exposure. Isolating the value of entry timing
+would require a control portfolio with comparable exposure.
+
+The simulator buys fractional adjusted units at the next adjusted open plus
+5 bp slippage and a 1 bp fee rounded up to cents. Adjusted open is
+`Open * Adj Close / Close`. Positions are marked at adjusted close and held
+through the end. The adjustment approximates reinvested distributions.
+Drawdown is measured from daily closing equity. The cost assumptions are
+fixed for this run.
+
+```powershell
+.\.venv\Scripts\python.exe -m market_sandbox.paper_replay --spy-csv SPY.csv --qqq-csv QQQ.csv --start 2024-01-01 --end 2025-12-31 --log replay.csv
+```
+
+Use aligned daily exports with `Date`, `Open`, `Close`, and `Adj Close` and at
+least 121 earlier trading closes. The optional decision log records the
+forecast, gate result, portfolio decision, and fill cost for each candidate
+and profile. Choose a fresh log filename for each run.
+
 ## Source map
 
 - `market_sandbox/forecast.py` builds features, fits the model, and measures forecast error.
@@ -103,3 +146,4 @@ Use `QQQ.csv` for the second run. The runner uses `Close` if you omit `--close-c
 - `market_sandbox/api.py` validates snapshots and selects a proposal.
 - `market_sandbox/demo.py` provides synthetic inputs and a local demo.
 - `market_sandbox/backtest.py` scores the model against a zero-return baseline.
+- `market_sandbox/paper_replay.py` replays portfolio decisions and simulates fills.

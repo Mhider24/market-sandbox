@@ -94,12 +94,47 @@ def forecast_next_close(closes: list[float]) -> Forecast:
     start = forecast_index - VALIDATION_ROWS
     validation_targets = targets[start:forecast_index]
     predictions = _replay(features, targets, start)
-    model_rmse = np.sqrt(np.mean((validation_targets - predictions) ** 2))
-    baseline_rmse = np.sqrt(np.mean(validation_targets**2))
+    return _summarize(
+        _predict(features, targets, forecast_index),
+        features[-1, -1],
+        validation_targets,
+        predictions,
+    )
+
+
+def walk_forward_forecasts(closes: list[float], first_target_close: int) -> list[Forecast]:
+    """Replay the live forecast and its trailing validation for each observed target."""
+    if not MIN_CLOSES <= first_target_close < len(closes):
+        raise ValueError(f"The first replay target needs {MIN_CLOSES} earlier closes.")
+
+    features, targets = _prepare_series(closes, MIN_CLOSES + 1)
+    first_target = first_target_close - LONG_LOOKBACK - 1
+    validation_start = first_target - VALIDATION_ROWS
+    predictions = _replay(features, targets, validation_start)
+    forecasts = []
+    for target in range(first_target, len(targets)):
+        offset = target - validation_start
+        forecasts.append(
+            _summarize(
+                predictions[offset],
+                features[target, -1],
+                targets[target - VALIDATION_ROWS : target],
+                predictions[offset - VALIDATION_ROWS : offset],
+            )
+        )
+    return forecasts
+
+
+def _summarize(
+    prediction: float,
+    volatility: float,
+    actual: np.ndarray,
+    previous_predictions: np.ndarray,
+) -> Forecast:
     return Forecast(
-        next_log_return_bps=_predict(features, targets, forecast_index) * BPS_PER_UNIT,
-        volatility_bps=float(features[-1, -1]) * BPS_PER_UNIT,
-        model_rmse_bps=float(model_rmse) * BPS_PER_UNIT,
-        baseline_rmse_bps=float(baseline_rmse) * BPS_PER_UNIT,
+        next_log_return_bps=float(prediction) * BPS_PER_UNIT,
+        volatility_bps=float(volatility) * BPS_PER_UNIT,
+        model_rmse_bps=float(np.sqrt(np.mean((actual - previous_predictions) ** 2))) * BPS_PER_UNIT,
+        baseline_rmse_bps=float(np.sqrt(np.mean(actual**2))) * BPS_PER_UNIT,
         validation_sessions=VALIDATION_ROWS,
     )
