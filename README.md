@@ -43,6 +43,47 @@ group caps. Select SPY, enter $300, and click **Preview buy** to see a case
 that reaches the group cap. **Edit portfolio** lets you change cash, marks,
 holdings, and caps for the current page session.
 
+## Connect Alpaca Paper
+
+Create paper API credentials in the Alpaca dashboard. In the PowerShell window
+that will run the desk, enter the values through prompts so the key and secret
+stay in that shell's environment.
+
+```powershell
+$env:ALPACA_PAPER_KEY_ID = Read-Host "Alpaca Paper key ID"
+$env:ALPACA_PAPER_SECRET_KEY = [System.Net.NetworkCredential]::new("", (Read-Host "Alpaca Paper secret key" -AsSecureString)).Password
+.\.venv\Scripts\python.exe -m uvicorn market_sandbox.api:app --host 127.0.0.1 --port 8000
+```
+
+Open [the desk](http://127.0.0.1:8000/) and choose **Alpaca Paper**. The
+broker routes are for a single local server process. The account panel and
+Activity show Alpaca paper balances, positions, and order statuses.
+Use **Refresh account** to update the broker view. The chart uses completed
+IEX daily bars. The separate **Sandbox** view retains the illustrative portfolio.
+
+**Run forecast** checks the selected symbols without submitting an order.
+It reports the date of the latest included bar, each prediction, the Ridge
+and zero-return RMSE, and the decision. The model refits on each review using
+the rolling training window. The review uses sessions before the current UTC
+date, including when run after the market closes.
+
+**Arm bot** enables automatic checks while the server is running. The bot
+checks once per minute and evaluates the first time it finds an open regular
+US session and no pending orders. It may submit one automatic paper buy per
+session. Missing data or a failed forecast, cash, or exposure check can
+result in a hold. The default automated order cap is $50, the default
+position cap is 20%, and the default combined equity exposure cap is 40%.
+The historical benchmark sections below document the model's results.
+
+**Pause** stops new automated submissions. The manual ticket supports
+cash-funded dollar buys and sells by share quantity from long holdings.
+Submitting a manual order or canceling an eligible Market Sandbox order
+also pauses the bot. Existing orders have their own status in **Activity**.
+Automation starts paused each time the server starts.
+
+Broker execution uses the [Alpaca Paper Trading API](https://docs.alpaca.markets/us/docs/trading-api).
+Historical prices come from the [Alpaca Market Data API](https://docs.alpaca.markets/us/reference/stockbars).
+
 ## Try the API
 
 Run `python -m uvicorn market_sandbox.api:app --reload` from the activated environment

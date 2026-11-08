@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from .broker_api import paper_desk_lifespan, router as broker_router
 from .forecast import BPS_PER_UNIT, MIN_CLOSES, forecast_next_close
 from .policy import (
     DEFAULT_SECTOR_CAP_BPS,
@@ -20,7 +21,8 @@ from .policy import (
     select_candidate,
 )
 
-app = FastAPI(title="Market Sandbox", version="0.1.0")
+app = FastAPI(title="Market Sandbox", version="0.1.0", lifespan=paper_desk_lifespan)
+app.include_router(broker_router)
 WORKSPACE_DIRECTORY = Path(__file__).with_name("web")
 app.mount("/workspace-assets", StaticFiles(directory=WORKSPACE_DIRECTORY), name="workspace-assets")
 

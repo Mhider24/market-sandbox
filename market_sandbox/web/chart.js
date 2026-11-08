@@ -104,7 +104,7 @@ export function createChart(svg, empty, tooltip) {
     }
 
     for (const [index, bar] of bars.entries()) {
-      const color = bar.close >= bar.open ? "#55d9ad" : "#ff858f";
+      const color = bar.close >= bar.open ? "#42a92b" : "#ff3038";
       const candleTop = Math.min(y(bar.close), y(bar.open));
       const volumeHeight = 34 * bar.volume / volumeMax;
       svg.append(
@@ -124,9 +124,9 @@ export function createChart(svg, empty, tooltip) {
     svg.append(
       svgNode("line", {
         x1: left, x2: right, y1: y(last), y2: y(last),
-        stroke: "#57caf7", "stroke-dasharray": "3 4", opacity: .65,
+        stroke: "#528dc5", "stroke-dasharray": "3 4", opacity: .65,
       }),
-      svgNode("rect", {x: right + 1, y: y(last) - 9, width: axisWidth - 2, height: 17, rx: 3, fill: "#215475"}),
+      svgNode("rect", {x: right + 1, y: y(last) - 9, width: axisWidth - 2, height: 17, rx: 3, fill: "#285683"}),
       svgNode("text", {x: right + 6, y: y(last) + 3, class: "chart-label last-price"}, number.format(last)),
     );
 

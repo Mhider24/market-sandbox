@@ -379,6 +379,11 @@ byId("watchlist").addEventListener("click", event => {
 byId("symbol-search").addEventListener("submit", event => {
   event.preventDefault();
   const query = byId("symbol-query");
+  if (document.body.dataset.mode === "alpaca") {
+    document.dispatchEvent(new CustomEvent("alpaca-symbol", {detail: query.value.trim().toUpperCase()}));
+    query.value = "";
+    return;
+  }
   if (selectSymbol(query.value.trim().toUpperCase())) {
     query.value = "";
     message("feedback", "");

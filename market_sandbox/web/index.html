@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1018">
+  <meta name="theme-color" content="#202020">
   <title>Market Sandbox · Trading workspace</title>
   <link rel="stylesheet" href="/workspace-assets/workspace.css">
   <script type="module" src="/workspace-assets/workspace.js"></script>
+  <script type="module" src="/workspace-assets/broker.js"></script>
 </head>
-<body>
+<body data-mode="sandbox">
   <svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
     <symbol id="icon-logo" viewBox="0 0 24 24"><path d="M3 18V6m6 13V9m6 10V4m6 14v-6M1 10h4m2 5h4m2-7h4m2 7h4"/></symbol>
     <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 4.5 4.5"/></symbol>
@@ -35,7 +36,10 @@
     </form>
     <div class="topbar-right">
       <span id="connection" class="connection" data-state="connecting"><i></i><span>Connecting</span></span>
-      <span class="paper-badge"><i></i> PAPER MODE</span>
+      <div class="mode-switch" role="group" aria-label="Trading environment">
+        <button id="mode-sandbox" type="button" aria-pressed="true">Sandbox</button>
+        <button id="mode-alpaca" type="button" aria-pressed="false">Alpaca Paper</button>
+      </div>
       <a class="docs-link" href="/docs" target="_blank" rel="noopener">API docs <svg class="icon"><use href="#icon-external"/></svg></a>
     </div>
   </header>
@@ -43,20 +47,21 @@
   <div class="shell">
     <nav class="rail" aria-label="Workspace shortcuts">
       <a href="#desk" aria-label="Desk"><svg class="icon"><use href="#icon-grid"/></svg><span>Desk</span></a>
-      <a href="#positions-panel" aria-label="Positions"><svg class="icon"><use href="#icon-wallet"/></svg><span>Positions</span></a>
-      <a href="#ticket" aria-label="Ticket"><svg class="icon"><use href="#icon-order"/></svg><span>Ticket</span></a>
+      <a id="positions-link" href="#positions-panel" aria-label="Positions"><svg class="icon"><use href="#icon-wallet"/></svg><span>Positions</span></a>
+      <a id="ticket-link" href="#ticket" aria-label="Ticket"><svg class="icon"><use href="#icon-order"/></svg><span>Ticket</span></a>
     </nav>
 
     <main id="desk">
       <header class="desk-heading">
-        <div><p class="eyebrow">MARKET SANDBOX / WORKSPACE</p><h1>Trading desk</h1></div>
-        <div class="desk-meta"><span class="snapshot-tag">DEMO MARKET DATA</span><span id="session-label"></span></div>
+        <h1>Active Trader</h1>
+        <div class="desk-meta" data-sandbox><span class="snapshot-tag">DEMO MARKET DATA</span><span id="session-label"></span></div>
+        <div class="desk-meta" data-alpaca><span class="snapshot-tag">ALPACA PAPER</span><span id="broker-market">Market clock unavailable</span></div>
       </header>
       <p id="feedback" class="feedback" role="status" hidden></p>
 
       <div class="workspace">
         <aside class="stack left-stack" aria-label="Account and watchlist">
-          <section class="panel" aria-labelledby="account-heading">
+          <section class="panel" data-sandbox aria-labelledby="account-heading">
             <header class="panel-heading"><h2 id="account-heading"><svg class="icon"><use href="#icon-wallet"/></svg>Account summary</h2><span class="section-tag">PAPER</span></header>
             <div class="account-content">
               <p class="eyebrow">PORTFOLIO VALUE</p>
@@ -65,7 +70,7 @@
               <button class="button secondary edit-button" id="edit-portfolio"><svg class="icon"><use href="#icon-edit"/></svg>Edit portfolio</button>
             </div>
           </section>
-          <section class="panel" aria-labelledby="watchlist-heading">
+          <section class="panel" data-sandbox aria-labelledby="watchlist-heading">
             <header class="panel-heading"><h2 id="watchlist-heading"><svg class="icon"><use href="#icon-watch"/></svg>Watchlist</h2><span id="watch-count" class="section-tag"></span></header>
             <div class="table-wrap"><table class="watch-table">
               <thead><tr><th scope="col">Symbol</th><th scope="col">Mark</th><th scope="col">Change</th></tr></thead>
@@ -73,10 +78,22 @@
             </table></div>
             <footer class="panel-footer">Illustrative marks · select a symbol to chart</footer>
           </section>
+          <section class="panel" data-alpaca aria-labelledby="broker-account-heading">
+            <header class="panel-heading"><h2 id="broker-account-heading"><svg class="icon"><use href="#icon-wallet"/></svg>Account Summary</h2><span class="section-tag">ALPACA PAPER</span></header>
+            <div class="account-content">
+              <dl class="metrics"><div><dt>Account value</dt><dd id="broker-equity">—</dd></div><div><dt>Cash</dt><dd id="broker-cash">—</dd></div></dl>
+              <button type="button" class="button secondary" id="broker-refresh">Refresh account</button>
+              <p id="broker-connection" class="broker-note" role="status"></p>
+            </div>
+          </section>
+          <section class="panel" data-alpaca aria-labelledby="broker-watch-heading">
+            <header class="panel-heading"><h2 id="broker-watch-heading"><svg class="icon"><use href="#icon-watch"/></svg>Watchlist</h2><span class="section-tag">BOT SYMBOLS</span></header>
+            <div class="broker-watch" id="broker-watch"></div>
+          </section>
         </aside>
 
         <div class="stack center-stack">
-          <section class="panel chart-panel" aria-labelledby="chart-title">
+          <section class="panel chart-panel" data-sandbox aria-labelledby="chart-title">
             <header class="instrument">
               <div class="instrument-title"><h2 id="chart-title">QQQ</h2><p id="instrument-name">Invesco QQQ Trust</p></div>
               <div class="quote"><strong id="quote-mark">—</strong><span id="quote-change">—</span></div>
@@ -98,7 +115,7 @@
             <footer class="panel-footer chart-footer"><span><i class="legend-dot"></i> Demo OHLC and volume</span><span>1 candle / session</span></footer>
           </section>
 
-          <section class="panel ticket-panel" id="ticket" aria-labelledby="ticket-heading">
+          <section class="panel ticket-panel" data-sandbox id="ticket" aria-labelledby="ticket-heading">
             <header class="panel-heading"><h2 id="ticket-heading"><svg class="icon"><use href="#icon-order"/></svg>Paper order ticket</h2><span class="section-tag">PREVIEW</span></header>
             <form id="ticket-form" class="ticket-form">
               <div><span class="field-label">Side / symbol</span><span class="trade-symbol"><span class="buy-chip">BUY</span><strong id="ticket-symbol">QQQ</strong></span></div>
@@ -107,10 +124,35 @@
             </form>
             <footer class="panel-footer ticket-footer"><span>Fixed price · fractional shares · zero fees</span><span id="ticket-mark"></span></footer>
           </section>
+          <section class="panel chart-panel" data-alpaca aria-labelledby="broker-chart-title">
+            <header class="instrument">
+              <div class="instrument-title"><h2 id="broker-chart-title">SPY</h2><p>Alpaca IEX · completed sessions</p></div>
+              <div class="quote"><strong id="broker-mark">—</strong><span id="broker-change">—</span></div>
+            </header>
+            <div class="chart-toolbar"><span class="chart-type">Daily candles</span><div class="ranges" id="broker-ranges" role="group" aria-label="Alpaca chart range">
+              <button type="button" data-range="22" aria-pressed="false">1M</button><button type="button" data-range="63" aria-pressed="true">3M</button><button type="button" data-range="126" aria-pressed="false">6M</button>
+            </div><span class="section-tag">IEX DAILY</span></div>
+            <div class="chart-area">
+              <svg id="broker-chart" role="img" aria-label="Alpaca daily candlestick and volume chart"></svg>
+              <p id="broker-chart-tooltip" class="chart-tooltip" aria-hidden="true" hidden></p>
+              <p id="broker-chart-empty" class="chart-empty">Connect Alpaca Paper to load a chart.</p>
+            </div>
+          </section>
+          <section class="panel broker-ticket" data-alpaca id="broker-ticket" aria-labelledby="broker-ticket-heading">
+            <header class="panel-heading"><h2 id="broker-ticket-heading"><svg class="icon"><use href="#icon-order"/></svg>Order Ticket</h2><span class="section-tag">ALPACA PAPER</span></header>
+            <form id="broker-order-form" class="broker-order-form">
+              <fieldset class="broker-side" id="broker-side"><legend class="field-label">Side</legend><label><input type="radio" name="side" value="buy" checked><span>Buy</span></label><label><input type="radio" name="side" value="sell"><span>Sell</span></label></fieldset>
+              <label><span class="field-label">Symbol</span><input id="broker-order-symbol" value="SPY" maxlength="12" required></label>
+              <label><span class="field-label" id="broker-order-unit">Amount ($)</span><input id="broker-order-size" type="number" min="1" step="0.01" inputmode="decimal" value="10" required></label>
+              <button type="submit" class="button primary" id="broker-submit" disabled>Submit paper order</button>
+            </form>
+            <footer class="panel-footer">Market · Day · Manual submission pauses automation</footer>
+            <p id="broker-order-message" class="broker-note" role="status" hidden></p>
+          </section>
         </div>
 
         <aside class="stack right-stack" aria-label="Positions and risk">
-          <section class="panel" id="positions-panel" aria-labelledby="positions-heading">
+          <section class="panel" data-sandbox id="positions-panel" aria-labelledby="positions-heading">
             <header class="panel-heading"><h2 id="positions-heading"><svg class="icon"><use href="#icon-grid"/></svg>Portfolio exposure</h2><span class="section-tag">CURRENT</span></header>
             <div id="exposure-tabs" class="exposure-tabs" role="group" aria-label="Exposure view">
               <button type="button" data-exposure="positions" aria-pressed="true">Positions</button>
@@ -120,13 +162,38 @@
             <footer class="panel-footer" id="limits-label"></footer>
           </section>
 
-          <section class="panel risk-panel" aria-labelledby="risk-heading">
+          <section class="panel risk-panel" data-sandbox aria-labelledby="risk-heading">
             <header class="panel-heading"><h2 id="risk-heading"><svg class="icon"><use href="#icon-shield"/></svg>Risk preview</h2><span class="section-tag">WHAT-IF</span></header>
             <div id="risk-result" class="risk-content" aria-live="polite"></div>
           </section>
+          <section class="panel" data-alpaca aria-labelledby="bot-heading">
+            <header class="panel-heading"><h2 id="bot-heading"><svg class="icon"><use href="#icon-shield"/></svg>Forecast Automation</h2><span class="section-tag" id="bot-mode">PAUSED</span></header>
+            <div class="broker-bot">
+              <p id="bot-status" class="broker-note" role="status">Checking paper connection…</p>
+              <form id="bot-form">
+                <label class="bot-symbol-field"><span class="field-label">Symbols, comma-separated</span><input id="bot-symbols" value="SPY, QQQ" required></label>
+                <div class="bot-limits">
+                  <label><span class="field-label">Max order ($)</span><input id="bot-budget" type="number" min="1" max="1000" step="0.01" value="50" required></label>
+                  <label><span class="field-label">Position cap (%)</span><input id="bot-position-cap" type="number" min="0.01" max="100" step="0.01" value="20" required></label>
+                  <label><span class="field-label">Invested cap (%)</span><input id="bot-invested-cap" type="number" min="0.01" max="100" step="0.01" value="40" required></label>
+                </div>
+                <div class="bot-actions"><button type="submit" class="button secondary" id="bot-review" disabled>Run forecast</button><button type="button" class="button primary" id="bot-arm" disabled>Arm bot</button><button type="button" class="button secondary" id="bot-pause" disabled>Pause</button></div>
+              </form>
+              <p id="bot-error" class="broker-note error-note" role="status" hidden></p>
+              <div id="bot-review-result"></div>
+            </div>
+          </section>
+          <section class="panel" data-alpaca id="broker-positions" aria-labelledby="broker-positions-heading">
+            <header class="panel-heading"><h2 id="broker-positions-heading">All Account Positions</h2><span class="section-tag">ALPACA</span></header>
+            <div class="table-wrap"><table><thead><tr><th>Position</th><th>Qty</th><th>Value</th></tr></thead><tbody id="broker-position-rows"></tbody></table></div>
+          </section>
+          <section class="panel" data-alpaca aria-labelledby="broker-orders-heading">
+            <header class="panel-heading"><h2 id="broker-orders-heading">Activity</h2><span class="section-tag">ORDERS</span></header>
+            <div class="table-wrap"><table><thead><tr><th>Order</th><th>Status</th><th>Action</th></tr></thead><tbody id="broker-order-rows"></tbody></table></div>
+          </section>
         </aside>
       </div>
-      <footer class="desk-footer"><span>Market Sandbox · simulated workspace</span><span>Portfolio values and orders are illustrative.</span></footer>
+      <footer class="desk-footer"><span>Market Sandbox · paper trading</span><span data-sandbox>Illustrative market data and previews</span><span data-alpaca>Alpaca paper orders and completed IEX bars</span></footer>
     </main>
   </div>
 
