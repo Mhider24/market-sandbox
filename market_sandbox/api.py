@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from .forecast import MIN_CLOSES, forecast_next_close
-from .policy import Candidate, check_candidate
+from .policy import Candidate, check_candidate, select_candidate
 
 app = FastAPI(title="Market Sandbox", version="0.1.0")
 
@@ -88,17 +88,10 @@ def simulate(request: Simulation) -> dict:
         )
         assessments.append((candidate, decision))
 
-    ranked = sorted(
-        ((candidate, decision) for candidate, decision in assessments if decision.action == "eligible"),
-        key=lambda entry: (
-            entry[0].sector not in profile.preferred_sectors,
-            -entry[0].forecast.next_log_return_bps,
-            entry[0].symbol,
-        ),
-    )
+    selected = select_candidate(assessments, profile.preferred_sectors)
     proposal = {"action": "hold", "reason": "No candidate passed the checks."}
-    if ranked:
-        candidate, decision = ranked[0]
+    if selected:
+        candidate, decision = selected
         proposal = {
             "action": "paper_buy",
             "symbol": candidate.symbol,

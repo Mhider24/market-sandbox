@@ -21,6 +21,28 @@ class Decision:
     max_buy_cents: int = 0
 
 
+def forecast_hold_reason(forecast: Forecast) -> str | None:
+    if not forecast.beats_baseline:
+        return "Ridge did not beat the zero-return baseline."
+    if forecast.next_log_return_bps < MIN_FORECAST_BPS:
+        return "Forecast is below the 10 basis point threshold."
+    return None
+
+
+def select_candidate(
+    assessments: list[tuple[Candidate, Decision]], preferred_sectors: set[str]
+) -> tuple[Candidate, Decision] | None:
+    return min(
+        ((candidate, decision) for candidate, decision in assessments if decision.action == "eligible"),
+        key=lambda entry: (
+            entry[0].sector not in preferred_sectors,
+            -entry[0].forecast.next_log_return_bps,
+            entry[0].symbol,
+        ),
+        default=None,
+    )
+
+
 def check_candidate(
     candidate: Candidate,
     *,
@@ -49,10 +71,8 @@ def check_candidate(
     if max_buy <= 0:
         return Decision(symbol, "hold", "No virtual cash or order budget is available.")
 
-    if not candidate.forecast.beats_baseline:
-        return Decision(symbol, "hold", "Ridge did not beat the zero-return baseline.")
-
-    if candidate.forecast.next_log_return_bps < MIN_FORECAST_BPS:
-        return Decision(symbol, "hold", "Forecast is below the 10 basis point threshold.")
+    hold_reason = forecast_hold_reason(candidate.forecast)
+    if hold_reason is not None:
+        return Decision(symbol, "hold", hold_reason)
 
     return Decision(symbol, "eligible", "Forecast and portfolio limits passed.", max_buy)
