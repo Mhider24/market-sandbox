@@ -2,9 +2,12 @@ from collections import Counter
 from dataclasses import asdict
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from .forecast import BPS_PER_UNIT, MIN_CLOSES, forecast_next_close
@@ -18,6 +21,13 @@ from .policy import (
 )
 
 app = FastAPI(title="Market Sandbox", version="0.1.0")
+WORKSPACE_DIRECTORY = Path(__file__).with_name("web")
+app.mount("/workspace-assets", StaticFiles(directory=WORKSPACE_DIRECTORY), name="workspace-assets")
+
+
+@app.get("/", include_in_schema=False)
+def trading_workspace() -> FileResponse:
+    return FileResponse(WORKSPACE_DIRECTORY / "index.html")
 
 Symbol = Annotated[
     str, StringConstraints(strip_whitespace=True, to_upper=True, min_length=1, max_length=12)

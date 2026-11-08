@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1018">
+  <title>Market Sandbox · Trading workspace</title>
+  <link rel="stylesheet" href="/workspace-assets/workspace.css">
+  <script type="module" src="/workspace-assets/workspace.js"></script>
+</head>
+<body>
+  <svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="icon-logo" viewBox="0 0 24 24"><path d="M3 18V6m6 13V9m6 10V4m6 14v-6M1 10h4m2 5h4m2-7h4m2 7h4"/></symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 4.5 4.5"/></symbol>
+    <symbol id="icon-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1"/><rect x="13.5" y="3.5" width="7" height="7" rx="1"/><rect x="3.5" y="13.5" width="7" height="7" rx="1"/><rect x="13.5" y="13.5" width="7" height="7" rx="1"/></symbol>
+    <symbol id="icon-wallet" viewBox="0 0 24 24"><path d="M19 8V5H6a3 3 0 0 0 0 6h14v8H6a3 3 0 0 1-3-3V8"/><path d="M20 13h-4a2 2 0 0 0 0 4h4"/></symbol>
+    <symbol id="icon-order" viewBox="0 0 24 24"><path d="M4 7h15m-5-5 5 5-5 5m6 5H5m5-5-5 5 5 5"/></symbol>
+    <symbol id="icon-watch" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v4m8 2v4m-7 2v4"/></symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 22s8-3.5 8-11V5l-8-3-8 3v6c0 7.5 8 11 8 11Z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+    <symbol id="icon-external" viewBox="0 0 24 24"><path d="M13 5h6v6m0-6-8 8m7 0v6H5V6h6"/></symbol>
+    <symbol id="icon-edit" viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l5-1L20 8a2 2 0 0 0-4-4L5 15l-1 5Z"/></symbol>
+  </svg>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Market Sandbox home">
+      <span class="brand-mark"><svg class="icon"><use href="#icon-logo"/></svg></span>
+      <span>Market Sandbox<small>PAPER TRADING LAB</small></span>
+    </a>
+    <form class="symbol-search" id="symbol-search">
+      <svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg>
+      <label class="sr-only" for="symbol-query">Find a symbol in the watchlist</label>
+      <input id="symbol-query" list="symbol-options" placeholder="Find a symbol…" autocomplete="off" maxlength="12" required>
+      <datalist id="symbol-options"></datalist>
+      <button type="submit" aria-label="Find symbol"><svg class="icon"><use href="#icon-arrow"/></svg></button>
+    </form>
+    <div class="topbar-right">
+      <span id="connection" class="connection" data-state="connecting"><i></i><span>Connecting</span></span>
+      <span class="paper-badge"><i></i> PAPER MODE</span>
+      <a class="docs-link" href="/docs" target="_blank" rel="noopener">API docs <svg class="icon"><use href="#icon-external"/></svg></a>
+    </div>
+  </header>
+
+  <div class="shell">
+    <nav class="rail" aria-label="Workspace shortcuts">
+      <a href="#desk" aria-label="Desk"><svg class="icon"><use href="#icon-grid"/></svg><span>Desk</span></a>
+      <a href="#positions-panel" aria-label="Positions"><svg class="icon"><use href="#icon-wallet"/></svg><span>Positions</span></a>
+      <a href="#ticket" aria-label="Ticket"><svg class="icon"><use href="#icon-order"/></svg><span>Ticket</span></a>
+    </nav>
+
+    <main id="desk">
+      <header class="desk-heading">
+        <div><p class="eyebrow">MARKET SANDBOX / WORKSPACE</p><h1>Trading desk</h1></div>
+        <div class="desk-meta"><span class="snapshot-tag">DEMO MARKET DATA</span><span id="session-label"></span></div>
+      </header>
+      <p id="feedback" class="feedback" role="status" hidden></p>
+
+      <div class="workspace">
+        <aside class="stack left-stack" aria-label="Account and watchlist">
+          <section class="panel" aria-labelledby="account-heading">
+            <header class="panel-heading"><h2 id="account-heading"><svg class="icon"><use href="#icon-wallet"/></svg>Account summary</h2><span class="section-tag">PAPER</span></header>
+            <div class="account-content">
+              <p class="eyebrow">PORTFOLIO VALUE</p>
+              <p id="account-value" class="equity">—</p>
+              <dl class="metrics"><div><dt>Cash available</dt><dd id="cash-value">—</dd></div><div><dt>Invested value</dt><dd id="invested-value">—</dd></div><div><dt>Cash weight</dt><dd id="cash-weight">—</dd></div></dl>
+              <button class="button secondary edit-button" id="edit-portfolio"><svg class="icon"><use href="#icon-edit"/></svg>Edit portfolio</button>
+            </div>
+          </section>
+          <section class="panel" aria-labelledby="watchlist-heading">
+            <header class="panel-heading"><h2 id="watchlist-heading"><svg class="icon"><use href="#icon-watch"/></svg>Watchlist</h2><span id="watch-count" class="section-tag"></span></header>
+            <div class="table-wrap"><table class="watch-table">
+              <thead><tr><th scope="col">Symbol</th><th scope="col">Mark</th><th scope="col">Change</th></tr></thead>
+              <tbody id="watchlist"></tbody>
+            </table></div>
+            <footer class="panel-footer">Illustrative marks · select a symbol to chart</footer>
+          </section>
+        </aside>
+
+        <div class="stack center-stack">
+          <section class="panel chart-panel" aria-labelledby="chart-title">
+            <header class="instrument">
+              <div class="instrument-title"><h2 id="chart-title">QQQ</h2><p id="instrument-name">Invesco QQQ Trust</p></div>
+              <div class="quote"><strong id="quote-mark">—</strong><span id="quote-change">—</span></div>
+            </header>
+            <div class="chart-toolbar">
+              <span class="chart-type"><svg class="icon"><use href="#icon-logo"/></svg> Daily candles</span>
+              <div class="ranges" id="chart-ranges" role="group" aria-label="Chart range">
+                <button type="button" data-range="22" aria-pressed="false">1M</button>
+                <button type="button" data-range="63" aria-pressed="true">3M</button>
+                <button type="button" data-range="126" aria-pressed="false">6M</button>
+              </div>
+              <span class="section-tag chart-data-tag">DEMO SERIES</span>
+            </div>
+            <div id="chart-area" class="chart-area">
+              <svg id="market-chart" role="img" aria-label="Illustrative daily candlestick and volume chart"></svg>
+              <p id="chart-tooltip" class="chart-tooltip" aria-hidden="true" hidden></p>
+              <p id="chart-empty" class="chart-empty" hidden>Chart history is available for demo symbols.</p>
+            </div>
+            <footer class="panel-footer chart-footer"><span><i class="legend-dot"></i> Demo OHLC and volume</span><span>1 candle / session</span></footer>
+          </section>
+
+          <section class="panel ticket-panel" id="ticket" aria-labelledby="ticket-heading">
+            <header class="panel-heading"><h2 id="ticket-heading"><svg class="icon"><use href="#icon-order"/></svg>Paper order ticket</h2><span class="section-tag">PREVIEW</span></header>
+            <form id="ticket-form" class="ticket-form">
+              <div><span class="field-label">Side / symbol</span><span class="trade-symbol"><span class="buy-chip">BUY</span><strong id="ticket-symbol">QQQ</strong></span></div>
+              <label class="amount-field" for="trade-amount"><span class="field-label">Order value</span><span class="input-prefix"><span>$</span><input id="trade-amount" type="number" inputmode="decimal" min="0.01" max="999999999.99" step="0.01" required value="500.00"></span></label>
+              <button class="button primary" id="preview-button" type="submit">Preview buy <svg class="icon"><use href="#icon-arrow"/></svg></button>
+            </form>
+            <footer class="panel-footer ticket-footer"><span>Fixed price · fractional shares · zero fees</span><span id="ticket-mark"></span></footer>
+          </section>
+        </div>
+
+        <aside class="stack right-stack" aria-label="Positions and risk">
+          <section class="panel" id="positions-panel" aria-labelledby="positions-heading">
+            <header class="panel-heading"><h2 id="positions-heading"><svg class="icon"><use href="#icon-grid"/></svg>Portfolio exposure</h2><span class="section-tag">CURRENT</span></header>
+            <div id="exposure-tabs" class="exposure-tabs" role="group" aria-label="Exposure view">
+              <button type="button" data-exposure="positions" aria-pressed="true">Positions</button>
+              <button type="button" data-exposure="sectors" aria-pressed="false">Groups</button>
+            </div>
+            <div class="table-wrap"><table class="exposure-table"><thead><tr><th id="exposure-column" scope="col">Symbol</th><th scope="col">Value</th><th scope="col">Weight</th></tr></thead><tbody id="exposure-rows"></tbody></table></div>
+            <footer class="panel-footer" id="limits-label"></footer>
+          </section>
+
+          <section class="panel risk-panel" aria-labelledby="risk-heading">
+            <header class="panel-heading"><h2 id="risk-heading"><svg class="icon"><use href="#icon-shield"/></svg>Risk preview</h2><span class="section-tag">WHAT-IF</span></header>
+            <div id="risk-result" class="risk-content" aria-live="polite"></div>
+          </section>
+        </aside>
+      </div>
+      <footer class="desk-footer"><span>Market Sandbox · simulated workspace</span><span>Portfolio values and orders are illustrative.</span></footer>
+    </main>
+  </div>
+
+  <dialog id="portfolio-editor" aria-labelledby="editor-heading">
+    <form id="portfolio-form">
+      <header class="editor-header"><div><p class="eyebrow">PAPER ACCOUNT</p><h2 id="editor-heading">Edit portfolio</h2></div><button class="close-button" type="button" id="close-editor" aria-label="Close editor">×</button></header>
+      <p class="editor-note">Set your cash, exposure caps, and closing marks. Changes apply to this page session.</p>
+      <div class="editor-settings">
+        <label><span class="field-label">Cash ($)</span><input id="edit-cash" type="number" inputmode="decimal" min="0" max="999999999.99" step="0.01" required></label>
+        <label><span class="field-label">Position cap (%)</span><input id="edit-position-cap" type="number" min="0.01" max="100" step="0.01" required></label>
+        <label><span class="field-label">Group cap (%)</span><input id="edit-group-cap" type="number" min="0.01" max="100" step="0.01" required></label>
+        <label><span class="field-label">As-of session</span><input id="edit-date" type="date" required></label>
+      </div>
+      <div id="editor-assets"></div>
+      <button type="button" class="button secondary" id="add-asset">+ Add symbol</button>
+      <p id="editor-error" class="feedback" role="status" hidden></p>
+      <footer class="editor-actions"><button type="button" class="button secondary" id="cancel-editor">Cancel</button><button type="submit" class="button primary" id="save-portfolio">Apply portfolio</button></footer>
+    </form>
+  </dialog>
+  <template id="asset-template">
+    <div class="editor-asset">
+      <label><span class="field-label">Symbol</span><input name="symbol" maxlength="12" required></label>
+      <label><span class="field-label">Group</span><input name="sector" maxlength="40" required></label>
+      <label><span class="field-label">Shares</span><input name="shares" type="number" inputmode="decimal" min="0" step="0.00000001" required></label>
+      <label><span class="field-label">Close ($)</span><input name="close" type="number" inputmode="decimal" min="0.01" max="99999999.99" step="0.01" required></label>
+      <button type="button" class="close-button" data-remove aria-label="Remove symbol">×</button>
+    </div>
+  </template>
+</body>
+</html>

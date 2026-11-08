@@ -24,6 +24,25 @@ gets a $50 paper buy proposal. The second holds because its tech exposure is alr
 at its cap. The fixture has deliberately predictable returns so the demo exercises
 the buy path. Its results describe the fixture only.
 
+## Open the trading workspace
+
+With the virtual environment set up, run this from the repository folder in PowerShell.
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn market_sandbox.api:app --reload
+```
+
+Open [the trading desk](http://127.0.0.1:8000/). The account summary and
+watchlist sit beside a daily candlestick chart, paper-buy ticket, and exposure
+panels. Select a symbol in the watchlist or search for it in the top bar.
+The charts and price changes are illustrative. The account values, current
+weights, and trade previews come from the local risk API.
+
+The desk opens with the $500 QQQ preview, which exceeds the position and
+group caps. Select SPY, enter $300, and click **Preview buy** to see a case
+that reaches the group cap. **Edit portfolio** lets you change cash, marks,
+holdings, and caps for the current page session.
+
 ## Try the API
 
 Run `python -m uvicorn market_sandbox.api:app --reload` from the activated environment
