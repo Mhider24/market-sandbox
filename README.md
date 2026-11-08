@@ -66,9 +66,40 @@ Methods are described in [Ridge regression](https://scikit-learn.org/stable/modu
 [rolling-origin validation and naïve forecasts](https://otexts.com/fpppy/05-toolbox.html),
 [RiskMetrics EWMA](https://www.msci.com/documents/10199/5915b101-4206-4ba0-aee2-3449d5c7e95a).
 
+## Historical forecast benchmark
+
+The original Ridge settings were frozen before scoring the January 2024 through
+December 2025 holdout. At each session the model refits using only targets
+observed by the previous close. The report scores every holdout session against
+an unchanged-price forecast. Lower root mean squared error (RMSE) is better.
+
+| ETF | Scored sessions | Ridge RMSE (bps) | Zero-return RMSE (bps) |
+| --- | ---: | ---: | ---: |
+| SPY | 502 | 115.595 | **102.734** |
+| QQQ | 502 | 143.071 | **131.508** |
+
+The zero-return baseline had lower error on both ETFs. The first scored close was
+January 2, 2024 and the last was December 31, 2025. The inputs were the `Adj Close`
+columns from the daily CSV exports at [StockQuote SPY](https://www.stockquote.io/stocks/SPY/history)
+and [StockQuote QQQ](https://www.stockquote.io/stocks/QQQ/history), downloaded on
+November 7, 2026. The exports started on November 8, 2021. The figures measure
+forecast accuracy.
+
+To rerun, save one daily price CSV per ticker with `Date` and `Adj Close` columns
+and at least 81 trading closes before the holdout. Include every trading session
+in the period. The runner sorts dates, rejects duplicates, and prints the actual
+range and session count. The source data may be revised between downloads.
+
+```powershell
+.\.venv\Scripts\python.exe -m market_sandbox.backtest --csv SPY.csv --close-column "Adj Close" --holdout-start 2024-01-01 --holdout-end 2025-12-31
+```
+
+Use `QQQ.csv` for the second run. The runner uses `Close` if you omit `--close-column`.
+
 ## Source map
 
 - `market_sandbox/forecast.py` builds features, fits the model, and measures forecast error.
 - `market_sandbox/policy.py` applies the portfolio and forecast limits.
 - `market_sandbox/api.py` validates snapshots and selects a proposal.
 - `market_sandbox/demo.py` provides synthetic inputs and a local demo.
+- `market_sandbox/backtest.py` scores the model against a zero-return baseline.
