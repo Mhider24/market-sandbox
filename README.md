@@ -164,6 +164,32 @@ capital-days. This tests entry timing within a month on this historical path.
 ```
 
 The command uses the same CSVs as the paper replay and a fixed random seed of 42.
+It reports the actual number of matches when the sampling budget runs out.
+
+## Forward validation in 2026
+
+The same model, signal cutoff, portfolio rules, cost assumptions, and 0.5%
+matching tolerance were applied to a separate period. The run scored 214
+sessions from January 2 through November 6, 2026, using the same data exports.
+Each forecast still uses only observations available at the prior close.
+
+| ETF | Ridge / zero-return RMSE, all sessions | Gate passed | Ridge / zero-return RMSE, gate passed |
+| --- | ---: | ---: | ---: |
+| SPY | 90.240 / **87.252** bps | 6 of 214 | 229.709 / **203.330** bps |
+| QQQ | 146.232 / **138.444** bps | 9 of 214 | 205.755 / **150.451** bps |
+
+| Profile | Fills | Ending equity | Max drawdown | Median control | Controls below observed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Standard | 13 | $10,059.34 | 3.88% | $10,078.60 | 9.3% |
+| Tight | 6 | $10,095.40 | 1.27% | $10,101.66 | 9.8% |
+
+Zero return again had lower error on both ETFs, including the sessions that
+passed the gate. Both portfolios also finished below most of their 2,000
+matched control draws. The control comparison is conditional on the filled
+orders and describes the observed historical path.
+
+To reproduce, use start `2026-01-01` and end `2026-11-06` with the benchmark,
+paper replay, and timing control commands above.
 
 ## Source map
 
